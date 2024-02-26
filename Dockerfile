@@ -14,6 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 80
 
-ENV NAME World
-
 CMD ["python", "./src/main.py"]
