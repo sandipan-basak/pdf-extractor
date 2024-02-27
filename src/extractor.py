@@ -1,5 +1,6 @@
 import os
 import requests
+import shutil
 from selenium import webdriver
 from dotenv import load_dotenv
 from selenium.webdriver.chrome.service import Service
@@ -7,6 +8,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
 
 load_dotenv()
@@ -20,50 +22,55 @@ def extract_pdf():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--window-size=1920x1080")
-    chrome_options.add_argument("--enable-logging")
-    chrome_options.add_argument("--v=1")
 
     service = Service(executable_path=chromedriver_path)
     driver = webdriver.Chrome(service=service, options=chrome_options)
+    base_url = "https://rbi.org.in/Scripts/NotificationUser.aspx#mainsection"
+    base_data_dir = "/usr/src/app/data/"
+
+    start_year = int(os.getenv('START_YEAR', 2024))
+    year_range = int(os.getenv('YEAR_RANGE', 1))
 
     try:
-        driver.get("https://rbi.org.in/Scripts/NotificationUser.aspx#mainsection")
+        driver.get(base_url)
 
-        # Example of clicking an accordion for the year 2024
         wait = WebDriverWait(driver, 10)
-        year_2024_button = wait.until(EC.element_to_be_clickable((By.ID, "btn2024")))
-        year_2024_button.click()
+        for year in range(start_year, start_year - year_range, -1):
+            data_dir = os.path.join(base_data_dir, str(year))
+            
+            if os.path.exists(data_dir):
+                print(f"Directory for year {year} already exists. Skipping...")
+                continue
 
-        # Wait for the page content to load after clicking
-        wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'div[id="2024"] ul')))
+            os.makedirs(data_dir, exist_ok=True)
 
-        # html = driver.page_source
-        # soup = BeautifulSoup(html, 'html.parser')
+            try:
+                year_button = wait.until(EC.element_to_be_clickable((By.ID, f"btn{year}")))
+                year_button.click()
+                wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, f'div[id="{year}"] ul')))
 
-        year_range = 1
+            except TimeoutException:
+                print(f"Could not find the button for year {year} or the content took too long to load.")
+                shutil.rmtree(data_dir)
+                print(f"Deleted directory for year {year} due to timeout.")
+                continue
 
-        for year in range(2024, 2024 - year_range, -1):
-            all_months_link = driver.find_elements(By.CSS_SELECTOR, 'div[id="2024"] ul > li > a')
-
+            all_months_link = driver.find_elements(By.CSS_SELECTOR, f'div[id="{year}"] ul > li > a')
             if isinstance(all_months_link, list) and len(all_months_link) > 0:
-                all_months_link[0].click()  # Click the first month link
-                fetch_and_download_pdfs(driver, year)
+                all_months_link[0].click()  
+                fetch_and_download_pdfs(driver, year, data_dir)
 
     finally:
         driver.quit()
 
 
-def fetch_and_download_pdfs(driver, year):
+def fetch_and_download_pdfs(driver, year, year_dir):
     WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, '#doublescroll > table.tablebg > tbody'))
     )
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     tbody = soup.select_one('#doublescroll > table.tablebg > tbody')
-    
-    # Ensure the directory for the year exists
-    year_dir = f"/usr/src/app/data/{year}"
-    os.makedirs(year_dir, exist_ok=True)
     
     for tr in tbody.find_all('tr'):
         tds = tr.find_all('td')
