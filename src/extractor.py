@@ -10,6 +10,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
+from urllib.parse import unquote
+
 
 load_dotenv()
 
@@ -75,24 +77,27 @@ def fetch_and_download_pdfs(driver, year, year_dir):
     for tr in tbody.find_all('tr'):
         tds = tr.find_all('td')
         if len(tds) == 2:
+            announcement_name = tds[0].text.strip()
             a_tag = tds[1].find('a')
             if a_tag and 'href' in a_tag.attrs:
                 pdf_url = a_tag['href']
-                download_pdf(pdf_url, year_dir)
+                download_pdf(pdf_url, year_dir, announcement_name)
 
-
-def download_pdf(pdf_url, year_dir):
+def download_pdf(pdf_url, year_dir, pdf_name):
     if not pdf_url.startswith('http'):
         pdf_url = 'https://rbidocs.rbi.org.in' + pdf_url
     
-    response = requests.get(pdf_url)
-    filename = pdf_url.split('/')[-1] if '/' in pdf_url else 'downloaded_file.pdf'
+    # Use the provided PDF name as the filename, replacing invalid characters
+    filename = f"{pdf_name}.pdf"
+    filename = unquote(filename)  # Decode URL-encoded strings, if any
+    # Replace any characters not allowed in file names
+    for char in ['/', '\\', ':', '*', '?', '"', '<', '>', '|']:
+        filename = filename.replace(char, '_')
     
-    # Adjust the path to include the year directory
     file_path = os.path.join(year_dir, filename)
     
-    # Check if the file already exists before downloading
     if not os.path.exists(file_path):
+        response = requests.get(pdf_url)
         with open(file_path, 'wb') as file:
             file.write(response.content)
         print(f"Downloaded: {file_path}")
